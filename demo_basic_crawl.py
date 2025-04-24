@@ -17,25 +17,26 @@ async def demo_basic_crawl():
         # 异步执行抓取任务，目标 URL 是一个 36kr 的文章页面。
         # arun 返回一个包含 CrawlResult 对象的列表。
         results: List[CrawlResult] = await crawler.arun(
-            url="https://www.36kr.com/p/3263507071788289",
+            # url="https://www.36kr.com/p/3263507071788289",
+            url="https://news.ycombinator.com/",
         )
 
         # 遍历抓取结果列表 (通常只有一个结果，除非有重定向或错误)
         for i, result in enumerate(results):
             print(f"Result {i + 1}:")
 
-            print(f"raw_markdown: {result.markdown.raw_markdown}")
-            print(f"fit_markdown: {result.markdown.fit_markdown}")
-            print(f"fit_html: {result.markdown.fit_html}")
+            # print(f"raw_markdown: {result.markdown.raw_markdown}")
+            # print(f"fit_markdown: {result.markdown.fit_markdown}")
+            # print(f"fit_html: {result.markdown.fit_html}")
 
-            # if result.success:
-            #     # 如果成功，打印 Markdown 内容的长度
-            #     print(f"Markdown length: {len(result.markdown.raw_markdown)} chars")
-            #     # 打印 Markdown 内容的前 100 个字符作为预览
-            #     print(f"First 100 chars: {result.markdown.raw_markdown[:100]}...")
-            # else:
-            #     # 如果失败，打印失败信息
-            #     print("Failed to crawl the URL")
+            if result.success:
+                # 如果成功，打印 Markdown 内容的长度
+                print(f"Markdown length: {len(result.markdown.raw_markdown)} chars")
+                # 打印 Markdown 内容的前 100 个字符作为预览
+                print(f"First 100 chars: {result.markdown.raw_markdown[:100]}...")
+            else:
+                # 如果失败，打印失败信息
+                print("Failed to crawl the URL")
 
 # 当脚本作为主程序直接运行时执行以下代码
 if __name__ == "__main__":
