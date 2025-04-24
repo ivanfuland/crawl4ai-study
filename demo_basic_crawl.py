@@ -1,5 +1,6 @@
 import asyncio
 from crawl4ai import *
+import pprint
 
 
 async def demo_basic_crawl():
@@ -22,16 +23,19 @@ async def demo_basic_crawl():
         # 遍历抓取结果列表 (通常只有一个结果，除非有重定向或错误)
         for i, result in enumerate(results):
             print(f"Result {i + 1}:")
-            # 检查 result.success 属性判断抓取是否成功
-            print(f"Success: {result.success}")
-            if result.success:
-                # 如果成功，打印 Markdown 内容的长度
-                print(f"Markdown length: {len(result.markdown.raw_markdown)} chars")
-                # 打印 Markdown 内容的前 100 个字符作为预览
-                print(f"First 100 chars: {result.markdown.raw_markdown[:100]}...")
-            else:
-                # 如果失败，打印失败信息
-                print("Failed to crawl the URL")
+
+            print(f"raw_markdown: {result.markdown.raw_markdown}")
+            print(f"fit_markdown: {result.markdown.fit_markdown}")
+            print(f"fit_html: {result.markdown.fit_html}")
+
+            # if result.success:
+            #     # 如果成功，打印 Markdown 内容的长度
+            #     print(f"Markdown length: {len(result.markdown.raw_markdown)} chars")
+            #     # 打印 Markdown 内容的前 100 个字符作为预览
+            #     print(f"First 100 chars: {result.markdown.raw_markdown[:100]}...")
+            # else:
+            #     # 如果失败，打印失败信息
+            #     print("Failed to crawl the URL")
 
 # 当脚本作为主程序直接运行时执行以下代码
 if __name__ == "__main__":
