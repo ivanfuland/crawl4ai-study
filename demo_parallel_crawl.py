@@ -7,9 +7,9 @@ async def demo_parallel_crawl():
     print("\n=== 2. Parallel Crawling ===")
 
     urls = [
-        "https://news.ycombinator.com/",
-        "https://example.com/",
-        "https://httpbin.org/html",
+        "https://www.aibase.com/zh/news/17507",
+        "https://www.aibase.com/zh/news/17505",
+        "https://www.aibase.com/zh/news/17502",
     ]
 
     async with AsyncWebCrawler() as crawler:
@@ -22,6 +22,7 @@ async def demo_parallel_crawl():
         print(
             f"{i + 1}. {result.url} - {'Success' if result.success else 'Failed'}"
         )
+        print(f"First 100 chars: {result.markdown.raw_markdown[:100]}...")
 
 if __name__ == "__main__":
     asyncio.run(demo_parallel_crawl())

@@ -25,10 +25,45 @@ crawl4ai-setup
 - 初始化数据库
 - 完成所有必要的后续配置
 
+## 环境变量配置
+
+本项目使用 `.env` 文件存储敏感信息（如 API 密钥）。出于安全考虑，此文件不应提交到版本控制系统中。
+
+请复制 `.env.example` 文件并将其重命名为 `.env`，然后填入您的实际 API 密钥：
+
+```bash
+# 在 Windows 上
+copy .env.example .env
+
+# 在 Linux/Mac 上
+cp .env.example .env
+```
+
+然后编辑 `.env` 文件，添加您的实际 API 密钥：
+
+```
+OPENAI_API_KEY=your_actual_api_key_here
+```
+
+或者，您也可以直接在系统中设置环境变量：
+
+```bash
+# Windows 命令行
+set OPENAI_API_KEY=your_actual_api_key_here
+
+# PowerShell
+$env:OPENAI_API_KEY="your_actual_api_key_here"
+
+# Linux/Mac
+export OPENAI_API_KEY="your_actual_api_key_here"
+```
+
 ## 项目文件
 
 - `test.py`: 一个简单的示例，展示如何使用 crawl4ai 库抓取特定网页（36kr文章）
-- `demo_basic_crawl`: 一个更详细的示例，演示如何进行基本的网页抓取并处理结果
+- `demo_basic_crawl.py`: 一个更详细的示例，演示如何进行基本的网页抓取并处理结果
+- `demo_llm_structured_extraction_no_schema.py`: 演示如何使用 LLM 进行结构化数据提取
+- `.env.example`: 环境变量配置模板，用于说明需要设置哪些环境变量
 
 ## 运行示例
 
