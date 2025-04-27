@@ -24,12 +24,93 @@ LOGIN_URL = os.getenv("LOGIN_URL")
 LOGIN_TIMEOUT = int(os.getenv("LOGIN_TIMEOUT"))  # 登录等待时间（秒）
 DEBUG = False
 
+# 配置文件路径
+CONFIG_FILE_PATH = "output/site_configs.json"
+
+# 加载或创建网站配置
+def load_or_create_site_configs():
+    # 默认配置
+    default_configs = {
+        "zsxq.com": {
+            "wait_for_load": "networkidle",
+            "content_selectors": [".article-title", ".content", "article", ".post-content"],
+            "timeout": 3000,
+            "needs_refresh_check": True,
+            "screenshot_debug": True
+        },
+        "km.netease.com": {
+            "wait_for_load": "networkidle",
+            "content_selectors": [
+                ".article-content", 
+                ".km-blog-content", 
+                ".markdown-body", 
+                "article", 
+                ".content-wrapper"
+            ],
+            "timeout": 30000,
+            "extra_wait": 5,
+            "scroll_behavior": "half_then_full",
+            "screenshot_debug": True
+        },
+        "default": {
+            "wait_for_load": "domcontentloaded",
+            "content_selectors": ["article", ".content", ".main", "main"],
+            "timeout": 10000,
+            "screenshot_debug": False
+        }
+    }
+    
+    try:
+        # 确保output目录存在
+        os.makedirs(os.path.dirname(CONFIG_FILE_PATH), exist_ok=True)
+        
+        # 尝试读取配置文件
+        if os.path.exists(CONFIG_FILE_PATH):
+            print(f"[CONFIG] 正在从 {CONFIG_FILE_PATH} 读取网站配置")
+            with open(CONFIG_FILE_PATH, "r", encoding="utf-8") as f:
+                return json.load(f)
+        
+        # 如果配置文件不存在，创建默认配置
+        print(f"[CONFIG] 配置文件不存在，创建默认配置到 {CONFIG_FILE_PATH}")
+        with open(CONFIG_FILE_PATH, "w", encoding="utf-8") as f:
+            json.dump(default_configs, f, ensure_ascii=False, indent=2)
+        
+        return default_configs
+    except Exception as e:
+        print(f"[CONFIG] 加载配置文件出错: {e}，使用默认配置")
+        return default_configs
+
+# 加载网站配置
+SITE_CONFIGS = load_or_create_site_configs()
+
 # 打印当前配置
 print("[CONFIG] 当前配置:")
 print(f"[CONFIG] TARGET_URL: {TARGET_URL}")
 print(f"[CONFIG] COOKIE_PATH: {COOKIE_PATH}")
 print(f"[CONFIG] LOGIN_URL: {len(LOGIN_URL) > 20 and LOGIN_URL[:20]+'...' or LOGIN_URL}")
 print(f"[CONFIG] DEBUG: {DEBUG}")
+print(f"[CONFIG] 配置文件: {CONFIG_FILE_PATH}")
+print(f"[CONFIG] 已加载网站配置: {', '.join([domain for domain in SITE_CONFIGS.keys() if domain != 'default'])}")
+if DEBUG:
+    print("[CONFIG] 网站配置详情:")
+    for domain, config in SITE_CONFIGS.items():
+        print(f"  - {domain}:")
+        for key, value in config.items():
+            if isinstance(value, list) and len(value) > 3:
+                print(f"    {key}: [{value[0]}, {value[1]}, ... +{len(value)-2}项]")
+            else:
+                print(f"    {key}: {value}")
+
+# 保存网站配置
+def save_site_configs(configs):
+    try:
+        with open(CONFIG_FILE_PATH, "w", encoding="utf-8") as f:
+            json.dump(configs, f, ensure_ascii=False, indent=2)
+        print(f"[CONFIG] 已保存网站配置到 {CONFIG_FILE_PATH}")
+        return True
+    except Exception as e:
+        print(f"[CONFIG] 保存配置文件出错: {e}")
+        return False
 
 async def manual_login():
     """使用直接的playwright方式打开浏览器登录，并暂停等待用户手动操作。"""
@@ -233,80 +314,96 @@ async def main():
     async def after_goto(page: Page, context: BrowserContext, url: str, response, **kwargs):
         print(f"[HOOK] 已加载页面: {url}")
         
-        # 如果是知识星球网站
-        if "zsxq.com" in url:
-            await page.wait_for_load_state("networkidle")
+        # 提取域名
+        domain = None
+        match = re.search(r'https?://(?:www\.)?([^/]+)', url)
+        if match:
+            domain = match.group(1)
+        
+        # 根据URL确定使用哪个网站配置
+        site_config = None
+        matched_domain = None
+        for config_domain, config in SITE_CONFIGS.items():
+            if config_domain != "default" and config_domain in url:
+                site_config = config
+                matched_domain = config_domain
+                print(f"[HOOK] 使用 {config_domain} 的配置")
+                break
+        
+        # 如果没有匹配的配置但有提取出域名，创建新配置
+        if site_config is None and domain and domain not in SITE_CONFIGS:
+            print(f"[HOOK] 发现新域名: {domain}，创建默认配置")
+            # 基于默认配置创建新配置
+            SITE_CONFIGS[domain] = SITE_CONFIGS["default"].copy()
+            SITE_CONFIGS[domain]["created_at"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            # 保存更新后的配置
+            save_site_configs(SITE_CONFIGS)
+            # 使用新创建的配置
+            site_config = SITE_CONFIGS[domain]
+            matched_domain = domain
+            
+        # 如果仍然没有匹配的配置，使用默认配置
+        if site_config is None:
+            site_config = SITE_CONFIGS["default"]
+            print("[HOOK] 使用默认配置")
+        
+        try:
+            # 等待页面加载
+            wait_for_load = site_config.get("wait_for_load", "domcontentloaded")
+            timeout = site_config.get("timeout", 10000)
+            print(f"[HOOK] 等待页面加载 ({wait_for_load})，超时: {timeout}ms")
+            await page.wait_for_load_state(wait_for_load, timeout=timeout)
             
             # 检查内容是否可见
-            content_visible = await page.is_visible(".article-title, .content, article, .post-content", timeout=3000)
-            
-            # 如果内容不可见且已加载cookie但有效，尝试刷新
-            if not content_visible and login_status["cookies_loaded"]:
-                print("[HOOK] 内容不可见，尝试刷新页面...")
-                await page.reload()
-                await page.wait_for_load_state("networkidle")
+            content_selectors = site_config.get("content_selectors", [])
+            if content_selectors:
+                selector_str = ", ".join(content_selectors)
+                content_visible = await page.is_visible(selector_str, timeout=3000)
+                print(f"[HOOK] 内容可见性检查: {content_visible}")
                 
-                # 再次检查内容可见性
-                content_visible = await page.is_visible(".article-title, .content, article, .post-content", timeout=3000)
-                if not content_visible:
-                    print("[HOOK] 刷新后仍无法看到内容，Cookie可能已失效")
-                    print("[HOOK] 请重新运行脚本并删除cookie文件以重新登录")
-                    login_status["is_logged_in"] = False
+                # 如果配置了需要刷新检查且内容不可见，尝试刷新
+                if not content_visible and site_config.get("needs_refresh_check", False) and login_status["cookies_loaded"]:
+                    print("[HOOK] 内容不可见，尝试刷新页面...")
+                    await page.reload()
+                    await page.wait_for_load_state(wait_for_load, timeout=timeout)
+                    
+                    # 再次检查内容可见性
+                    content_visible = await page.is_visible(selector_str, timeout=3000)
+                    if not content_visible:
+                        print("[HOOK] 刷新后仍无法看到内容，Cookie可能已失效")
+                        login_status["is_logged_in"] = False
+            
+            # 额外等待时间
+            extra_wait = site_config.get("extra_wait", 0)
+            if extra_wait > 0:
+                print(f"[HOOK] 额外等待 {extra_wait} 秒...")
+                await asyncio.sleep(extra_wait)
+            
+            # 执行滚动行为
+            scroll_behavior = site_config.get("scroll_behavior", None)
+            if scroll_behavior:
+                print(f"[HOOK] 执行滚动行为: {scroll_behavior}")
+                if scroll_behavior == "full":
+                    await page.evaluate("window.scrollTo(0, document.body.scrollHeight);")
+                elif scroll_behavior == "half_then_full":
+                    await page.evaluate("""
+                        window.scrollTo(0, document.body.scrollHeight / 2);
+                        setTimeout(() => {
+                            window.scrollTo(0, document.body.scrollHeight);
+                        }, 1000);
+                    """)
+                await asyncio.sleep(2)  # 滚动后等待
             
             # 调试模式下截图
-            if DEBUG:
-                await page.screenshot(path="page_debug.png", full_page=True)
-        
-        # 如果是网易KM网站 
-        elif "km.netease.com" in url:
-            print("[HOOK] 检测到网易KM页面，进行特殊处理...")
-            
-            # 等待网络空闲，等待时间稍长一些 (30秒)
-            try:
-                print("[HOOK] 等待网络空闲...")
-                await page.wait_for_load_state("networkidle", timeout=30000)
-                print("[HOOK] 网络空闲状态已达成")
+            if DEBUG and site_config.get("screenshot_debug", False):
+                filename = url.split("//")[-1].replace("/", "_")[:30]
+                screenshot_path = f"debug_{filename}.png"
+                print(f"[HOOK] 保存页面截图到 {screenshot_path}")
+                await page.screenshot(path=screenshot_path, full_page=True)
                 
-                # 额外等待可能的动态内容
-                print("[HOOK] 等待额外5秒以确保动态内容加载...")
-                await asyncio.sleep(5)
-                
-                # 执行滚动以触发可能的懒加载
-                print("[HOOK] 执行滚动以触发懒加载...")
-                await page.evaluate("""
-                    window.scrollTo(0, document.body.scrollHeight / 2);
-                    setTimeout(() => {
-                        window.scrollTo(0, document.body.scrollHeight);
-                    }, 1000);
-                """)
-                
-                # 再等待以确保内容加载
-                await asyncio.sleep(2)
-                
-                # 检查KM页面上内容元素是否存在
-                content_selectors = [
-                    ".article-content", 
-                    ".km-blog-content", 
-                    ".markdown-body", 
-                    "article", 
-                    ".content-wrapper"
-                ]
-                
-                for selector in content_selectors:
-                    if await page.is_visible(selector, timeout=1000):
-                        print(f"[HOOK] 检测到内容元素: {selector}")
-                        break
-                else:
-                    print("[HOOK] 未找到预期的内容元素，但继续尝试抓取...")
-                
-                # 调试模式下截图
-                if DEBUG:
-                    print("[HOOK] 保存页面截图...")
-                    await page.screenshot(path="km_debug.png", full_page=True)
-                    
-            except Exception as e:
-                print(f"[HOOK] 处理KM页面时出错: {e}")
-                # 继续执行，不中断流程
+        except Exception as e:
+            print(f"[HOOK] 处理页面时出错: {e}")
+            # 继续执行，不中断流程
         
         return page
 
@@ -332,6 +429,20 @@ async def main():
         if hasattr(result, 'metadata') and result.metadata and result.metadata.get("title"):
             page_title = result.metadata.get("title")
             print(f"页面标题: {page_title}")
+            
+            # 检查并更新网站配置中的title选择器
+            domain = None
+            for d in SITE_CONFIGS.keys():
+                if d != "default" and d in result.url:
+                    domain = d
+                    break
+                    
+            if domain and "title_selector_added" not in SITE_CONFIGS[domain]:
+                # 只在成功获取到标题并且配置中尚未记录title选择器时更新
+                print(f"[CONFIG] 记录成功获取标题的网站: {domain}")
+                SITE_CONFIGS[domain]["title_selector_added"] = True
+                # 保存更新后的配置
+                save_site_configs(SITE_CONFIGS)
         
         # 处理页面标题，替换非法字符，用于创建文件夹
         safe_title = "".join([c if c.isalnum() or c in [' ', '_', '-'] else '_' for c in page_title])

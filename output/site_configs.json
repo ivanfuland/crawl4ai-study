@@ -1,0 +1,40 @@
+{
+  "zsxq.com": {
+    "wait_for_load": "networkidle",
+    "content_selectors": [
+      ".article-title",
+      ".content",
+      "article",
+      ".post-content"
+    ],
+    "timeout": 3000,
+    "needs_refresh_check": true,
+    "screenshot_debug": true
+  },
+  "km.netease.com": {
+    "wait_for_load": "networkidle",
+    "content_selectors": [
+      ".article-content",
+      ".km-blog-content",
+      ".markdown-body",
+      "article",
+      ".content-wrapper"
+    ],
+    "timeout": 30000,
+    "extra_wait": 5,
+    "scroll_behavior": "half_then_full",
+    "screenshot_debug": true,
+    "title_selector_added": true
+  },
+  "default": {
+    "wait_for_load": "domcontentloaded",
+    "content_selectors": [
+      "article",
+      ".content",
+      ".main",
+      "main"
+    ],
+    "timeout": 10000,
+    "screenshot_debug": false
+  }
+}
