@@ -1,0 +1,41 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# 配置驱动系统指南
+
+项目使用配置驱动架构来处理不同网站，无需修改代码即可支持新网站。
+
+## 配置文件
+
+配置存储在 `output/site_configs.json` 中，包含各网站的处理规则。系统会：
+- 首次运行自动创建默认配置
+- 遇到新域名时自动添加配置
+- 成功爬取后更新配置
+
+## 配置项说明
+
+每个网站可配置以下参数：
+
+```json
+{
+  "domain.com": {
+    "wait_for_load": "networkidle",         // 页面加载等待方式
+    "content_selectors": [".article"],      // 内容选择器
+    "timeout": 10000,                       // 超时时间(毫秒)
+    "needs_refresh_check": true,            // 是否检查内容可见性并刷新
+    "extra_wait": 5,                        // 额外等待时间(秒)
+    "scroll_behavior": "half_then_full",    // 滚动行为
+    "screenshot_debug": true                // 是否保存截图
+  }
+}
+```
+
+## 扩展新网站
+
+无需修改代码，只需在配置文件中添加新网站的配置项：
+
+1. 找到 `output/site_configs.json` 文件
+2. 添加新网站的配置，可复制现有网站配置并修改
+3. 保存文件后运行爬虫即可支持新网站

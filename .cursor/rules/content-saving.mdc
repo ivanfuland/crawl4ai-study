@@ -1,0 +1,39 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# 内容保存机制
+
+系统使用基于标题的文件结构来保存爬取内容，确保整洁和可追溯性。
+
+## 保存流程
+
+1. 从页面元数据中提取标题
+2. 处理标题生成安全的文件夹名（移除非法字符，限制长度）
+3. 添加时间戳确保唯一性
+4. 在 output 目录下创建子文件夹
+5. 保存 HTML 和 Markdown 两种格式的内容
+
+## 存储结构
+
+```
+output/
+├── 安全处理后的标题_时间戳/
+│   ├── crawled_content.html  # 原始HTML内容
+│   └── crawled_content.md    # 转换后的Markdown内容
+├── 另一个标题_时间戳/
+│   ├── crawled_content.html
+│   └── crawled_content.md
+└── site_configs.json         # 网站配置文件
+```
+
+## 代码位置
+
+内容保存逻辑位于 [hook/simple_crawler.py](mdc:hook/simple_crawler.py) 中的 `main()` 函数末尾，在成功爬取网页后执行。
+
+## 标题提取
+
+系统从以下来源获取标题：
+1. 爬取结果的 metadata 中的 title 字段
+2. 如果未找到标题，则使用"未知标题"作为默认值

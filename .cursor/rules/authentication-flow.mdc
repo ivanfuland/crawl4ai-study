@@ -1,0 +1,38 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# 身份验证流程
+
+系统使用基于 Playwright 的身份验证机制，允许在首次登录后保存并重用认证状态。
+
+## 登录流程
+
+1. 系统检查 cookie 文件是否存在
+2. 如果不存在，启动手动登录流程：
+   - 打开浏览器窗口
+   - 导航到登录页面
+   - 暂停执行，等待用户手动登录
+   - 用户点击"恢复"继续执行
+   - 系统检查登录状态
+   - 如果登录成功，保存 cookie 到 output 目录
+3. 如果已有 cookie 文件，直接加载使用
+
+## 关键代码
+
+主要登录逻辑位于 [hook/simple_crawler.py](mdc:hook/simple_crawler.py) 中的 `manual_login()` 函数。
+
+重要部分：
+- Cookie 保存在 `COOKIE_PATH` 定义的路径中
+- 登录页面由 `LOGIN_URL` 环境变量定义
+- 系统会检查 URL 变化、用户元素等判断登录成功
+- Cookie 作为 JSON 存储，包含认证令牌
+
+## Cookie 复用
+
+后续运行时，系统会：
+1. 检查 cookie 文件
+2. 如果存在，加载至浏览器上下文
+3. 请求页面时使用已加载的 cookie
+4. 如果 cookie 失效，提示需要重新登录

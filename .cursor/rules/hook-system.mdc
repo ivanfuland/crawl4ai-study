@@ -1,0 +1,43 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# 钩子系统
+
+项目使用钩子（Hook）机制来自定义爬虫行为的各个阶段，实现灵活且可扩展的爬取流程。
+
+## 主要钩子
+
+系统实现了三个主要钩子函数：
+
+1. **on_page_context_created** - 页面和上下文创建后触发
+   - 设置页面超时
+   - 加载 cookie
+   - 初始化登录状态
+
+2. **before_goto** - 页面导航前触发
+   - 设置浏览器头信息
+   - 配置请求参数
+
+3. **after_goto** - 页面导航后触发
+   - 根据网站配置执行相应操作
+   - 检查内容可见性
+   - 执行滚动行为
+   - 必要时保存截图
+
+## 注册钩子
+
+钩子注册在 [hook/simple_crawler.py](mdc:hook/simple_crawler.py) 中，通过以下方式完成：
+
+```python
+crawler.crawler_strategy.set_hook("on_page_context_created", on_page_context_created)
+crawler.crawler_strategy.set_hook("before_goto", before_goto)
+crawler.crawler_strategy.set_hook("after_goto", after_goto)
+```
+
+## 扩展钩子
+
+要添加新的处理逻辑，可以：
+1. 修改现有钩子函数
+2. 更新网站配置，钩子函数会根据配置执行不同操作
