@@ -35,7 +35,7 @@ playwright install
 TARGET_URL = "https://articles.zsxq.com/id_m5c8015ehlem.html"  # 目标文章URL
 COOKIE_PATH = "zsxq_cookies.json"  # Cookie保存路径
 LOGIN_TIMEOUT = 60  # 登录等待时间（秒）
-DEBUG = True  # 是否启用调试
+DEBUG = False  # 是否启用调试
 ```
 
 ### 运行脚本
@@ -45,6 +45,18 @@ python simple_crawler.py
 ```
 
 首次运行时，脚本会打开浏览器窗口等待您登录知识星球账号（支持微信扫码登录）。登录成功后，脚本会保存cookie以便后续使用。
+
+### Cookie文件生成说明
+
+`zsxq_cookies.json` 文件是在首次成功登录知识星球后自动创建的。该文件包含您的登录凭证，脚本会尝试优先使用此文件中的cookie进行自动登录。
+
+Cookie生成过程：
+1. 首次运行脚本时，由于没有cookie文件，系统会打开浏览器等待您手动登录
+2. 登录成功后，脚本会自动获取当前会话的cookies
+3. 这些cookies将被保存到脚本同目录下的`zsxq_cookies.json`文件中
+4. 后续运行脚本时，会优先尝试使用这些已保存的cookies进行登录
+
+如果保存的cookies失效，脚本会再次请求手动登录并更新cookie文件。您也可以手动删除此文件，以强制在下次运行时重新登录。
 
 ## 工作原理
 
@@ -68,10 +80,11 @@ python simple_crawler.py
 - `crawled_content.html`：完整HTML内容
 - `crawled_content.md`：优化后的Markdown内容
 - `page_debug.png`：页面截图（仅在DEBUG=True时生成）
-- `zsxq_cookies.json`：保存的cookie信息
+- `zsxq_cookies.json`：保存的cookie信息，用于自动登录
 
 ## 注意事项
 
 - 由于知识星球的反爬机制，过于频繁的访问可能导致账号被限制
 - 请遵守知识星球的用户协议，不要爬取和分享付费内容
-- 定期更新脚本以适应知识星球可能的界面变化 
+- 定期更新脚本以适应知识星球可能的界面变化
+- `zsxq_cookies.json`包含敏感登录信息，请妥善保管，避免泄露 

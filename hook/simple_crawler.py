@@ -3,20 +3,115 @@ import json
 import os
 import re
 from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, CacheMode
-from playwright.async_api import Page, BrowserContext
+from playwright.async_api import Page, BrowserContext, async_playwright
 from crawl4ai.content_filter_strategy import PruningContentFilter
 from crawl4ai.markdown_generation_strategy import DefaultMarkdownGenerator
+
+
+# 强制设置环境变量
+import os
+os.environ["PLAYWRIGHT_BROWSER_VISIBLE"] = "1"
+os.environ["PLAYWRIGHT_FORCE_VISIBLE"] = "1"  # 额外强制可见
+
 
 # 全局配置
 TARGET_URL = "https://articles.zsxq.com/id_m5c8015ehlem.html"
 COOKIE_PATH = "zsxq_cookies.json"
 LOGIN_URL = "https://wx.zsxq.com/dweb2/login"
 LOGIN_TIMEOUT = 60  # 登录等待时间（秒）
-DEBUG = True
+DEBUG = False
+
+async def manual_login():
+    """使用直接的playwright方式打开浏览器登录"""
+    print("[LOGIN] 正在启动直接浏览器登录...")
+    
+    async with async_playwright() as playwright:
+        # 启动浏览器
+        browser = await playwright.chromium.launch(
+            headless=False,
+            args=[
+                "--disable-gpu",
+                "--no-sandbox",
+                "--disable-web-security",
+                "--window-size=1280,800"
+            ]
+        )
+        
+        # 创建上下文
+        context = await browser.new_context(
+            viewport={"width": 1280, "height": 800},
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36"
+        )
+        
+        # 打开页面
+        page = await context.new_page()
+        print("[LOGIN] 成功创建浏览器窗口")
+        
+        # 访问登录页面
+        await page.goto(LOGIN_URL)
+        await page.wait_for_load_state("networkidle")
+        print("[LOGIN] 已加载登录页面")
+        
+        # 等待手动登录
+        print(f"[LOGIN] 请在浏览器窗口中完成登录，等待{LOGIN_TIMEOUT}秒")
+        
+        login_success = False
+        for i in range(LOGIN_TIMEOUT // 5):
+            print(f"[LOGIN] 等待登录...剩余{LOGIN_TIMEOUT - i*5}秒")
+            await asyncio.sleep(5)
+            
+            # 检查登录状态
+            if "login" not in page.url and "/dweb2/" in page.url:
+                login_success = True
+                break
+            
+            try:
+                has_user_avatar = await page.query_selector(".user-avatar, .username, .user-info")
+                if has_user_avatar:
+                    login_success = True
+                    break
+            except:
+                pass
+            
+            if not await page.is_visible(".login-btn, .sign-in, .login-wall"):
+                login_success = True
+                break
+        
+        if login_success:
+            print("[LOGIN] 登录成功！保存cookie...")
+            cookies = await context.cookies()
+            with open(COOKIE_PATH, "w", encoding="utf-8") as f:
+                json.dump(cookies, f, ensure_ascii=False, indent=2)
+            print(f"[LOGIN] 已保存cookies到 {COOKIE_PATH}")
+            
+            # 测试跳转到文章页面
+            print("[LOGIN] 正在测试访问文章页面...")
+            await page.goto(TARGET_URL)
+            await page.wait_for_load_state("networkidle")
+            
+            # 截图保存测试
+            await page.screenshot(path="article_test.png")
+            print("[LOGIN] 已保存文章页面截图到article_test.png")
+            
+            await browser.close()
+            return True
+        else:
+            print("[LOGIN] 登录超时，请重试")
+            await browser.close()
+            return False
 
 async def main():
+    """原爬虫主函数"""
     print("🔗 简化版爬虫：利用crawl4ai原生功能，保留cookie验证")
-
+    
+    # 检查是否需要手动登录
+    if not os.path.exists(COOKIE_PATH):
+        print("[MAIN] Cookie文件不存在，需要先进行手动登录")
+        login_success = await manual_login()
+        if not login_success:
+            print("[MAIN] 登录失败，请重试")
+            return
+    
     # 1) 配置浏览器
     browser_config = BrowserConfig(
         headless=False,  # 可视模式，便于调试
@@ -104,84 +199,6 @@ async def main():
         
         return page
 
-    # 处理登录的函数
-    async def handle_login(page: Page, context: BrowserContext):
-        print("[HOOK] 尝试登录知识星球...")
-        
-        try:
-            # 确认在登录页面
-            if "login" not in page.url and not await page.is_visible(".login-btn, .sign-in, .login-wall"):
-                await page.goto(LOGIN_URL)
-                await page.wait_for_load_state("networkidle")
-            
-            # 先尝试使用已有cookie
-            if os.path.exists(COOKIE_PATH) and os.path.getsize(COOKIE_PATH) > 10:
-                try:
-                    print("[HOOK] 检测到cookie文件，尝试使用...")
-                    with open(COOKIE_PATH, "r", encoding="utf-8") as f:
-                        cookies = json.load(f)
-                    
-                    if cookies and len(cookies) > 0:
-                        await context.add_cookies(cookies)
-                        await page.reload()
-                        await page.wait_for_load_state("networkidle")
-                        
-                        # 检查登录状态
-                        await asyncio.sleep(3)
-                        if not await page.is_visible(".login-btn, .sign-in, .login-wall"):
-                            print("[HOOK] 使用cookie登录成功!")
-                            login_status["is_logged_in"] = True
-                            return True
-                        else:
-                            print("[HOOK] 使用cookie登录失败，需要手动登录")
-                except Exception as e:
-                    print(f"[HOOK] 使用cookie登录出错: {str(e)}")
-            
-            # 等待手动登录
-            print(f"\n[HOOK] 请在浏览器中手动登录，将等待{LOGIN_TIMEOUT}秒...")
-            print("[HOOK] 支持微信扫码登录...")
-            
-            for i in range(LOGIN_TIMEOUT, 0, -5):
-                print(f"[HOOK] 等待登录...剩余{i}秒")
-                await asyncio.sleep(5)
-                
-                # 检查登录状态
-                login_success = False
-                
-                # 检查URL
-                if "login" not in page.url and "/dweb2/" in page.url:
-                    login_success = True
-                
-                # 检查用户元素
-                try:
-                    if await page.query_selector(".user-avatar, .username, .user-info"):
-                        login_success = True
-                except:
-                    pass
-                
-                # 检查登录元素是否消失
-                if not await page.is_visible(".login-btn, .sign-in, .login-wall"):
-                    login_success = True
-                
-                if login_success:
-                    print("[HOOK] 检测到登录成功！")
-                    login_status["is_logged_in"] = True
-                    
-                    # 保存cookies
-                    cookies = await context.cookies()
-                    with open(COOKIE_PATH, "w", encoding="utf-8") as f:
-                        json.dump(cookies, f, ensure_ascii=False, indent=2)
-                    print(f"[HOOK] 已保存cookies到 {COOKIE_PATH}")
-                    
-                    return True
-            
-            print("[HOOK] 登录超时，请重试")
-            return False
-            
-        except Exception as e:
-            print(f"[HOOK] 登录过程中出错: {str(e)}")
-            return False
-
     # Hook: 页面导航后
     async def after_goto(page: Page, context: BrowserContext, url: str, response, **kwargs):
         print(f"[HOOK] 已加载页面: {url}")
@@ -193,39 +210,18 @@ async def main():
             # 检查内容是否可见
             content_visible = await page.is_visible(".article-title, .content, article, .post-content", timeout=3000)
             
-            # 如果内容不可见且未登录，进行登录
-            if not content_visible and not login_status["is_logged_in"]:
-                print("[HOOK] 内容不可见，尝试登录...")
-                await page.goto(LOGIN_URL)
+            # 如果内容不可见且已加载cookie但有效，尝试刷新
+            if not content_visible and login_status["cookies_loaded"]:
+                print("[HOOK] 内容不可见，尝试刷新页面...")
+                await page.reload()
                 await page.wait_for_load_state("networkidle")
                 
-                # 登录
-                await handle_login(page, context)
-                
-                # 登录成功后返回原页面
-                if login_status["is_logged_in"]:
-                    print("[HOOK] 登录成功，返回原始页面")
-                    await page.goto(url)
-                    await page.wait_for_load_state("networkidle")
-            
-            # 如果加载了cookie但内容不可见
-            elif login_status["cookies_loaded"] and not content_visible:
-                print("[HOOK] 已加载Cookie但内容不可见，可能Cookie已过期")
-                await page.reload()
-                
-                # 再次检查内容
-                content_visible_after_refresh = await page.is_visible(".article-title, .content, article, .post-content", timeout=3000)
-                if not content_visible_after_refresh:
-                    print("[HOOK] 刷新后仍无法看到内容，尝试重新登录")
+                # 再次检查内容可见性
+                content_visible = await page.is_visible(".article-title, .content, article, .post-content", timeout=3000)
+                if not content_visible:
+                    print("[HOOK] 刷新后仍无法看到内容，Cookie可能已失效")
+                    print("[HOOK] 请重新运行脚本并删除cookie文件以重新登录")
                     login_status["is_logged_in"] = False
-                    
-                    await page.goto(LOGIN_URL)
-                    await page.wait_for_load_state("networkidle")
-                    await handle_login(page, context)
-                    
-                    if login_status["is_logged_in"]:
-                        await page.goto(url)
-                        await page.wait_for_load_state("networkidle")
             
             # 调试模式下截图
             if DEBUG:
