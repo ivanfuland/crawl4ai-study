@@ -1,0 +1,32 @@
+[
+  {
+    "name": "sensorsdata2015jssdkcross",
+    "value": "%7B%22distinct_id%22%3A%2219589f31700101-0ae38e38e38e39-26011d51-2359296-19589f31701915%22%2C%22first_id%22%3A%22%22%2C%22props%22%3A%7B%22%24latest_traffic_source_type%22%3A%22%E5%BC%95%E8%8D%90%E6%B5%81%E9%87%8F%22%2C%22%24latest_search_keyword%22%3A%22%E6%9C%AA%E5%8F%96%E5%88%B0%E5%80%BC%22%2C%22%24latest_referrer%22%3A%22https%3A%2F%2Fwww.youtube.com%2F%22%7D%2C%22identities%22%3A%22eyIkaWRlbnRpdHlfY29va2llX2lkIjoiMTk1ODlmMzE3MDAxMDEtMGFlMzhlMzhlMzhlMzktMjYwMTFkNTEtMjM1OTI5Ni0xOTU4OWYzMTcwMTkxNSJ9%22%2C%22history_login_id%22%3A%7B%22name%22%3A%22%22%2C%22value%22%3A%22%22%7D%2C%22%24device_id%22%3A%2219589f31700101-0ae38e38e38e39-26011d51-2359296-19589f31701915%22%7D",
+    "domain": ".zsxq.com",
+    "path": "/",
+    "expires": -1,
+    "httpOnly": false,
+    "secure": false,
+    "sameSite": "Lax"
+  },
+  {
+    "name": "zsxq_access_token",
+    "value": "3D9D936C-7B4C-418D-ADCD-4D13471C40B5_05769E4B899BCD4A",
+    "domain": ".zsxq.com",
+    "path": "/",
+    "expires": -1,
+    "httpOnly": false,
+    "secure": false,
+    "sameSite": "Lax"
+  },
+  {
+    "name": "abtest_env",
+    "value": "product",
+    "domain": ".zsxq.com",
+    "path": "/",
+    "expires": -1,
+    "httpOnly": false,
+    "secure": false,
+    "sameSite": "Lax"
+  }
+]
