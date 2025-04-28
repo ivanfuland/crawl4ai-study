@@ -2,6 +2,7 @@ import asyncio
 import json
 import os
 import re
+import base64  # 添加base64模块
 from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, CacheMode
 from playwright.async_api import Page, BrowserContext, async_playwright
 from crawl4ai.content_filter_strategy import PruningContentFilter
@@ -16,6 +17,7 @@ load_dotenv()
 os.environ["PLAYWRIGHT_BROWSER_VISIBLE"] = "1"
 os.environ["PLAYWRIGHT_FORCE_VISIBLE"] = "1"  # 额外强制可见
 
+__cur_dir__ = os.path.dirname(os.path.abspath(__file__))
 
 # 全局配置 - 从环境变量中读取
 TARGET_URL = os.getenv("TARGET_URL")
@@ -242,7 +244,10 @@ async def main():
                 "ignore_links": False,
                 "escape_html": True
             }
-        )
+        ),
+        screenshot=False, 
+        pdf=False
+        
     )
 
     # 3) 创建爬虫实例
@@ -369,6 +374,7 @@ async def main():
     # 运行爬虫访问目标URL
     result = await crawler.arun(TARGET_URL, config=crawler_run_config)
 
+    # 爬取成功的后一堆操作
     if result.success:
         print("\n爬取成功！")
         print("URL:", result.url)
@@ -406,6 +412,26 @@ async def main():
         with open(md_path, "w", encoding="utf-8") as f:
             f.write(result.markdown.fit_markdown)
             print(f"[OUTPUT] 已保存Markdown内容到 {md_path}")
+
+        if result.screenshot:
+            # Save screenshot
+            screenshot_path = f"{title_dir}/crawled_content.png"
+            # 确保tmp文件夹存在
+            os.makedirs(os.path.dirname(screenshot_path), exist_ok=True)
+            with open(screenshot_path, "wb") as f:
+                f.write(base64.b64decode(result.screenshot))
+            print(f"[OUTPUT] 已保存截图到 {screenshot_path}")
+
+        if result.pdf:
+            # Save PDF
+            pdf_path = f"{title_dir}/crawled_content.pdf"  # 添加.pdf扩展名
+            # 确保tmp文件夹存在
+            os.makedirs(os.path.dirname(pdf_path), exist_ok=True)
+            with open(pdf_path, "wb") as f:
+                f.write(result.pdf)
+            print(f"[OUTPUT] 已保存PDF到 {pdf_path}")
+        
+
     else:
         print("爬取失败:", result.error_message)
 
