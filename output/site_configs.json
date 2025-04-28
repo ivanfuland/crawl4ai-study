@@ -12,7 +12,11 @@
         "login"
       ],
       "elements_exist": [
-        ".UserInfo"
+        ".user-avatar",
+        ".user-container",
+        ".avatar",
+        ".header-container",
+        "app-header"
       ]
     }
   },
