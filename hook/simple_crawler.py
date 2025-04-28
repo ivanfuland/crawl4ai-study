@@ -112,6 +112,7 @@ async def manual_login():
         print("[LOGIN] 脚本已恢复执行，正在检查登录状态...")
         login_success = False
         try:
+
             # --- 从配置中获取登录成功指标 ---
             # 首先尝试确定当前页面对应哪个域名配置
             current_domain = None
@@ -152,33 +153,39 @@ async def manual_login():
                     print(f"[LOGIN CHECK] URL不包含排除项 '{url_fragment}' ✓")
             
             # 如果URL检查通过，检查DOM元素
-            if url_check_passed:
-                elements_check_passed = True
-                for selector in login_indicators.get("elements_exist", []):
-                    element = await page.query_selector(selector)
-                    if not element:
-                        print(f"[LOGIN CHECK] 未找到元素 '{selector}'")
-                        elements_check_passed = False
-                        break
-                    else:
-                        print(f"[LOGIN CHECK] 找到元素 '{selector}' ✓")
+            # if url_check_passed:
+            #     elements_check_passed = True
+            #     for selector in login_indicators.get("elements_exist", []):
+            #         element = await page.query_selector(selector)
+            #         if not element:
+            #             print(f"[LOGIN CHECK] 未找到元素 '{selector}'")
+            #             elements_check_passed = False
+            #             break
+            #         else:
+            #             print(f"[LOGIN CHECK] 找到元素 '{selector}' ✓")
                 
-                # 综合判断
-                login_success = elements_check_passed
-
+            #     # 综合判断
+            #     login_success = elements_check_passed
+            
+            # 暂时屏蔽Selector检查，直接使用URL检查
+            if url_check_passed:
+                login_success = True
+            else:
+                login_success = False
+            
         except Exception as e:
             print(f"[LOGIN CHECK] 检查登录状态时出错: {e}")
             login_success = False # 出错则认为未登录
         
         if login_success:
             print("[LOGIN] 检测到登录成功！保存cookie...")
+
+            # 登录成功后，获取cookies，并保存
             cookies = await context.cookies()
-            # 确保output目录存在
             os.makedirs(os.path.dirname(COOKIE_PATH), exist_ok=True)
             with open(COOKIE_PATH, "w", encoding="utf-8") as f:
                 json.dump(cookies, f, ensure_ascii=False, indent=2)
-            print(f"[LOGIN] 已保存cookies到 {COOKIE_PATH}")
-            
+            print(f"[LOGIN] 已保存cookies到 {COOKIE_PATH}")            
             await browser.close()
             print("[LOGIN] 浏览器已关闭")
             return True
@@ -188,51 +195,7 @@ async def manual_login():
             print("[LOGIN] 浏览器已关闭")
             return False
 
-    """
-    根据配置检查页面是否处于登录状态
-    Args:
-        page: playwright页面对象
-        domain: 可选，指定域名，如不指定则从URL自动判断
-    Returns:
-        bool: 是否已登录
-    """
-    try:
-        # 如果未指定域名，尝试从URL中提取
-        if not domain:
-            for config_domain in SITE_CONFIGS.keys():
-                if config_domain != "default" and config_domain in page.url:
-                    domain = config_domain
-                    break
-        
-        # 获取登录指标
-        login_indicators = None
-        if domain and domain in SITE_CONFIGS:
-            login_indicators = SITE_CONFIGS[domain].get("login_success_indicators", {})
-        else:
-            login_indicators = SITE_CONFIGS["default"].get("login_success_indicators", {})
-        
-        # 验证URL包含项
-        for url_fragment in login_indicators.get("url_contains", []):
-            if url_fragment not in page.url:
-                return False
-        
-        # 验证URL不包含项
-        for url_fragment in login_indicators.get("url_not_contains", []):
-            if url_fragment in page.url:
-                return False
-        
-        # 验证DOM元素存在
-        for selector in login_indicators.get("elements_exist", []):
-            element = await page.query_selector(selector)
-            if not element:
-                return False
-                
-        # 所有检查通过
-        return True
-    except Exception as e:
-        print(f"[LOGIN CHECK] 检查登录状态出错: {e}")
-        return False  # 出错时默认为未登录
-
+ 
 async def main():
     """原爬虫主函数"""
     print("🔗 简化版爬虫：利用crawl4ai原生功能，保留cookie验证")
@@ -245,14 +208,7 @@ async def main():
             print("[MAIN] 登录失败，请重试")
             return
     
-    # 1) 配置浏览器
-    browser_config = BrowserConfig(
-        headless=False,  # 可视模式，便于调试
-        viewport={"width": 1280, "height": 800},
-        verbose=True
-    )
-
-    # 2) 配置爬虫运行参数
+    # 配置爬虫运行参数
     crawler_run_config = CrawlerRunConfig(
         js_code="""
             // 尝试展开内容和移除遮挡
@@ -260,25 +216,22 @@ async def main():
                 // 点击展开按钮
                 const expandButtons = document.querySelectorAll('.read-more, .expand, .show-more, .view-all, button:contains("查看更多")');
                 for (const button of expandButtons) {
-                    button.click();
+                    try { button.click(); } catch (e) { console.error('Error clicking button:', e); }
                 }
-                
-                // 滚动页面触发加载
-                window.scrollTo(0, document.body.scrollHeight);
                 
                 // 移除遮挡层
                 const overlays = document.querySelectorAll('.overlay, .mask, .modal, .login-modal');
                 for (const overlay of overlays) {
-                    overlay.remove();
+                    try { overlay.remove(); } catch (e) { console.error('Error removing overlay:', e); }
                 }
                 
-                // 确保可以滚动
-                document.body.style.overflow = 'auto';               
+                // 确保可以滚动 (如果遮挡层禁用了滚动，这仍可能有用)
+                try { document.body.style.overflow = 'auto'; } catch (e) { console.error('Error setting body overflow:', e); }             
             }
             
             // 执行页面增强
             enhancePage();
-            setTimeout(enhancePage, 3000); // 增加延时至3秒，给内容更多加载时间
+            setTimeout(enhancePage, 3000); 
         """,
         wait_for="body", 
         cache_mode=CacheMode.BYPASS,
@@ -293,7 +246,7 @@ async def main():
     )
 
     # 3) 创建爬虫实例
-    crawler = AsyncWebCrawler(config=browser_config)
+    crawler = AsyncWebCrawler()
 
 
     # Hook: 页面和上下文创建后
