@@ -7,9 +7,14 @@
       "article",
       ".post-content"
     ],
-    "timeout": 3000,
+    "timeout": 10000,
     "needs_refresh_check": true,
-    "screenshot_debug": true
+    "screenshot_debug": true,
+    "login_success_indicators": {
+      "url_contains": ["zsxq.com"],
+      "url_not_contains": ["login"],
+      "elements_exist": [".UserInfo"]
+    }
   },
   "km.netease.com": {
     "wait_for_load": "networkidle",
@@ -20,11 +25,16 @@
       "article",
       ".content-wrapper"
     ],
-    "timeout": 30000,
+    "timeout": 10000,
     "extra_wait": 5,
     "scroll_behavior": "half_then_full",
     "screenshot_debug": true,
-    "title_selector_added": true
+    "title_selector_added": true,
+    "login_success_indicators": {
+      "url_contains": ["km.netease.com"],
+      "url_not_contains": ["login.netease.com"],
+      "elements_exist": [".user-avatar", ".username", ".user-info"]
+    }
   },
   "default": {
     "wait_for_load": "domcontentloaded",
@@ -35,7 +45,11 @@
       "main"
     ],
     "timeout": 10000,
-    "screenshot_debug": false
+    "screenshot_debug": false,
+    "login_success_indicators": {
+      "url_not_contains": ["login"],
+      "elements_exist": [".user-avatar", ".username", ".user-info"]
+    }
   },
   "confluence.leihuo.netease.com": {
     "wait_for_load": "networkidle",
@@ -45,10 +59,15 @@
       "#content .page.view",
       "#content"
     ],
-    "timeout": 30000,
+    "timeout": 10000,
     "extra_wait": 5,
     "screenshot_debug": true,
     "created_at": "2025-04-28 10:13:36",
-    "title_selector_added": true
+    "title_selector_added": true,
+    "login_success_indicators": {
+      "url_contains": ["confluence.leihuo.netease.com"],
+      "url_not_contains": ["login"],
+      "elements_exist": [".aui-avatar", "#personal-info", ".user-avatar"]
+    }
   }
 }

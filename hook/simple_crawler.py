@@ -39,30 +39,12 @@ def load_or_create_site_configs():
             with open(CONFIG_FILE_PATH, "r", encoding="utf-8") as f:
                 return json.load(f)
         
-        # 如果配置文件不存在，创建最小默认配置
-        print(f"[CONFIG] 配置文件不存在，创建最小默认配置到 {CONFIG_FILE_PATH}")
-        default_configs = {
-            "default": {
-                "wait_for_load": "domcontentloaded",
-                "content_selectors": ["article", ".content", ".main", "main"],
-                "timeout": 10000,
-                "screenshot_debug": False
-            }
-        }
+        # 如果配置文件不存在，直接报错
+        raise FileNotFoundError(f"配置文件 {CONFIG_FILE_PATH} 不存在，请先创建配置文件")
         
-        with open(CONFIG_FILE_PATH, "w", encoding="utf-8") as f:
-            json.dump(default_configs, f, ensure_ascii=False, indent=2)
-        
-        return default_configs
     except Exception as e:
-        print(f"[CONFIG] 加载配置文件出错: {e}，使用最小默认配置")
-        return {
-            "default": {
-                "wait_for_load": "domcontentloaded",
-                "content_selectors": ["article", ".content", ".main", "main"],
-                "timeout": 10000
-            }
-        }
+        # 不再返回默认配置，直接抛出异常
+        raise Exception(f"加载配置文件出错: {e}")
 
 # 加载网站配置
 SITE_CONFIGS = load_or_create_site_configs()
@@ -140,25 +122,59 @@ async def manual_login():
         print("[LOGIN] 脚本已恢复执行，正在检查登录状态...")
         login_success = False
         try:
-            # --- 登录成功检查逻辑 ---
-            # 检查1: URL是否已跳转到目标网站
-            if "km.netease.com" in page.url and "login.netease.com" not in page.url:
-                print("[LOGIN CHECK] 检测到URL已跳转至 km.netease.com")
-                login_success = True
-            elif "confluence.leihuo.netease.com" in page.url:
-                print("[LOGIN CHECK] 检测到URL已跳转至 confluence.leihuo.netease.com")
-                login_success = True
+            # --- 从配置中获取登录成功指标 ---
+            # 首先尝试确定当前页面对应哪个域名配置
+            current_domain = None
+            for domain in SITE_CONFIGS.keys():
+                if domain != "default" and domain in page.url:
+                    current_domain = domain
+                    break
+            
+            # 获取对应的登录成功指标
+            login_indicators = None
+            if current_domain:
+                login_indicators = SITE_CONFIGS[current_domain].get("login_success_indicators", {})
+                print(f"[LOGIN CHECK] 使用 {current_domain} 的登录检测规则")
+            else:
+                # 如果找不到匹配的域名配置，使用默认配置
+                login_indicators = SITE_CONFIGS["default"].get("login_success_indicators", {})
+                print("[LOGIN CHECK] 未找到匹配的域名配置，使用默认登录检测规则")
+            
+            # 对URL进行检查
+            url_check_passed = True
+            
+            # 检查URL包含项
+            for url_fragment in login_indicators.get("url_contains", []):
+                if url_fragment not in page.url:
+                    print(f"[LOGIN CHECK] URL不包含 '{url_fragment}'")
+                    url_check_passed = False
+                    break
+                else:
+                    print(f"[LOGIN CHECK] URL包含 '{url_fragment}' ✓")
+            
+            # 检查URL不包含项
+            for url_fragment in login_indicators.get("url_not_contains", []):
+                if url_fragment in page.url:
+                    print(f"[LOGIN CHECK] URL包含被排除的字符串 '{url_fragment}'")
+                    url_check_passed = False
+                    break
+                else:
+                    print(f"[LOGIN CHECK] URL不包含排除项 '{url_fragment}' ✓")
+            
+            # 如果URL检查通过，检查DOM元素
+            if url_check_passed:
+                elements_check_passed = True
+                for selector in login_indicators.get("elements_exist", []):
+                    element = await page.query_selector(selector)
+                    if not element:
+                        print(f"[LOGIN CHECK] 未找到元素 '{selector}'")
+                        elements_check_passed = False
+                        break
+                    else:
+                        print(f"[LOGIN CHECK] 找到元素 '{selector}' ✓")
                 
-            # 检查2: (备用) 之前的检查逻辑，检查 URL 是否包含 /dweb2/ 或用户头像等
-            if not login_success:
-                 if "login" not in page.url and "/dweb2/" in page.url: # 之前的逻辑
-                     print("[LOGIN CHECK] 检测到 URL 不含 'login' 且包含 '/dweb2/' (旧逻辑)")
-                     login_success = True
-            if not login_success:
-                 has_user_avatar = await page.query_selector(".user-avatar, .username, .user-info") # 之前的逻辑
-                 if has_user_avatar:
-                    print("[LOGIN CHECK] 检测到用户头像/信息元素 (旧逻辑)")
-                    login_success = True
+                # 综合判断
+                login_success = elements_check_passed
 
         except Exception as e:
             print(f"[LOGIN CHECK] 检查登录状态时出错: {e}")
@@ -173,13 +189,6 @@ async def manual_login():
                 json.dump(cookies, f, ensure_ascii=False, indent=2)
             print(f"[LOGIN] 已保存cookies到 {COOKIE_PATH}")
             
-            # # 测试跳转到文章页面 (暂时注释掉，避免干扰)
-            # print("[LOGIN] 正在测试访问文章页面...")
-            # await page.goto(TARGET_URL)
-            # await page.wait_for_load_state("networkidle")
-            # await page.screenshot(path="article_test.png")
-            # print("[LOGIN] 已保存文章页面截图到article_test.png")
-            
             await browser.close()
             print("[LOGIN] 浏览器已关闭")
             return True
@@ -188,6 +197,53 @@ async def manual_login():
             await browser.close()
             print("[LOGIN] 浏览器已关闭")
             return False
+
+# 通用的登录状态检查函数
+async def check_login_status(page, domain=None):
+    """
+    根据配置检查页面是否处于登录状态
+    Args:
+        page: playwright页面对象
+        domain: 可选，指定域名，如不指定则从URL自动判断
+    Returns:
+        bool: 是否已登录
+    """
+    try:
+        # 如果未指定域名，尝试从URL中提取
+        if not domain:
+            for config_domain in SITE_CONFIGS.keys():
+                if config_domain != "default" and config_domain in page.url:
+                    domain = config_domain
+                    break
+        
+        # 获取登录指标
+        login_indicators = None
+        if domain and domain in SITE_CONFIGS:
+            login_indicators = SITE_CONFIGS[domain].get("login_success_indicators", {})
+        else:
+            login_indicators = SITE_CONFIGS["default"].get("login_success_indicators", {})
+        
+        # 验证URL包含项
+        for url_fragment in login_indicators.get("url_contains", []):
+            if url_fragment not in page.url:
+                return False
+        
+        # 验证URL不包含项
+        for url_fragment in login_indicators.get("url_not_contains", []):
+            if url_fragment in page.url:
+                return False
+        
+        # 验证DOM元素存在
+        for selector in login_indicators.get("elements_exist", []):
+            element = await page.query_selector(selector)
+            if not element:
+                return False
+                
+        # 所有检查通过
+        return True
+    except Exception as e:
+        print(f"[LOGIN CHECK] 检查登录状态出错: {e}")
+        return False  # 出错时默认为未登录
 
 async def main():
     """原爬虫主函数"""
@@ -229,29 +285,7 @@ async def main():
                 }
                 
                 // 确保可以滚动
-                document.body.style.overflow = 'auto';
-                
-                // Confluence特殊处理
-                if (window.location.href.includes('confluence.leihuo.netease.com')) {
-                    // 展开折叠内容
-                    const expanders = document.querySelectorAll('.expand-control');
-                    for (const expander of expanders) {
-                        expander.click();
-                    }
-                    
-                    // 确保内容区域可见
-                    const mainContent = document.querySelector('#main-content');
-                    if (mainContent) {
-                        mainContent.style.display = 'block';
-                        mainContent.style.visibility = 'visible';
-                    }
-                    
-                    // 移除遮挡元素
-                    const hideElements = document.querySelectorAll('.aui-blanket, .aui-dialog2');
-                    for (const el of hideElements) {
-                        el.remove();
-                    }
-                }
+                document.body.style.overflow = 'auto';               
             }
             
             // 执行页面增强
@@ -261,8 +295,12 @@ async def main():
         wait_for="body", 
         cache_mode=CacheMode.BYPASS,
         markdown_generator=DefaultMarkdownGenerator(
+            # 使用基本配置
             content_filter=PruningContentFilter(),
-            # options={"ignore_links": True}
+            options={
+                "ignore_links": False,
+                "escape_html": True
+            }
         )
     )
 
@@ -291,7 +329,9 @@ async def main():
                         await context.add_cookies(cookies)
                         print(f"[HOOK] 成功加载 {len(cookies)} 个cookie")
                         login_status["cookies_loaded"] = True
-                        login_status["is_logged_in"] = True  # 假设cookie有效
+                        # 不再假设cookie一定有效，将在页面加载后检查
+                        login_status["is_logged_in"] = False  # 初始设为False，等页面加载后验证
+                        print("[HOOK] Cookie已加载，登录状态将在页面加载后验证")
                     else:
                         print("[HOOK] Cookie文件存在但为空或无效")
             except Exception as e:
@@ -308,10 +348,6 @@ async def main():
             "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36"
         }
-        
-        # 处理Confluence网站
-        if "confluence.leihuo.netease.com" in url:
-            print("[HOOK] 检测到Confluence网站，准备配置...")
         
         # 设置HTTP头
         await page.set_extra_http_headers(headers)
@@ -338,22 +374,13 @@ async def main():
                 print(f"[HOOK] 使用 {config_domain} 的配置")
                 break
         
-        # 如果没有匹配的配置但有提取出域名，创建新配置
-        if site_config is None and domain and domain not in SITE_CONFIGS:
-            print(f"[HOOK] 发现新域名: {domain}，创建默认配置")
-            # 基于默认配置创建新配置
-            SITE_CONFIGS[domain] = SITE_CONFIGS["default"].copy()
-            SITE_CONFIGS[domain]["created_at"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            # 保存更新后的配置
-            save_site_configs(SITE_CONFIGS)
-            # 使用新创建的配置
-            site_config = SITE_CONFIGS[domain]
-            matched_domain = domain
-            
-        # 如果仍然没有匹配的配置，使用默认配置
+        # 如果没有匹配的配置，使用默认配置
         if site_config is None:
             site_config = SITE_CONFIGS["default"]
-            print("[HOOK] 使用默认配置")
+            print(f"[HOOK] 未找到匹配的域名配置，使用默认配置")
+            # 提取当前域名仅用于日志记录
+            if domain:
+                print(f"[HOOK] 当前域名: {domain} (未配置)")
         
         try:
             # 等待页面加载
@@ -378,8 +405,13 @@ async def main():
                     # 再次检查内容可见性
                     content_visible = await page.is_visible(selector_str, timeout=3000)
                     if not content_visible:
-                        print("[HOOK] 刷新后仍无法看到内容，Cookie可能已失效")
-                        login_status["is_logged_in"] = False
+                        print("[HOOK] 刷新后仍无法看到内容，检查登录状态...")
+                        # 使用通用登录检查函数
+                        login_status["is_logged_in"] = await check_login_status(page, matched_domain)
+                        if not login_status["is_logged_in"]:
+                            print("[HOOK] 登录检查失败，Cookie可能已失效")
+                        else:
+                            print("[HOOK] 登录状态正常，但内容仍然不可见")
             
             # 额外等待时间
             extra_wait = site_config.get("extra_wait", 0)
@@ -437,20 +469,6 @@ async def main():
         if hasattr(result, 'metadata') and result.metadata and result.metadata.get("title"):
             page_title = result.metadata.get("title")
             print(f"页面标题: {page_title}")
-            
-            # 检查并更新网站配置中的title选择器
-            domain = None
-            for d in SITE_CONFIGS.keys():
-                if d != "default" and d in result.url:
-                    domain = d
-                    break
-                    
-            if domain and "title_selector_added" not in SITE_CONFIGS[domain]:
-                # 只在成功获取到标题并且配置中尚未记录title选择器时更新
-                print(f"[CONFIG] 记录成功获取标题的网站: {domain}")
-                SITE_CONFIGS[domain]["title_selector_added"] = True
-                # 保存更新后的配置
-                save_site_configs(SITE_CONFIGS)
         
         # 处理页面标题，替换非法字符，用于创建文件夹
         safe_title = "".join([c if c.isalnum() or c in [' ', '_', '-'] else '_' for c in page_title])
