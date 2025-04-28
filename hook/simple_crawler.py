@@ -29,37 +29,6 @@ CONFIG_FILE_PATH = "output/site_configs.json"
 
 # 加载或创建网站配置
 def load_or_create_site_configs():
-    # 默认配置
-    default_configs = {
-        "zsxq.com": {
-            "wait_for_load": "networkidle",
-            "content_selectors": [".article-title", ".content", "article", ".post-content"],
-            "timeout": 3000,
-            "needs_refresh_check": True,
-            "screenshot_debug": True
-        },
-        "km.netease.com": {
-            "wait_for_load": "networkidle",
-            "content_selectors": [
-                ".article-content", 
-                ".km-blog-content", 
-                ".markdown-body", 
-                "article", 
-                ".content-wrapper"
-            ],
-            "timeout": 30000,
-            "extra_wait": 5,
-            "scroll_behavior": "half_then_full",
-            "screenshot_debug": True
-        },
-        "default": {
-            "wait_for_load": "domcontentloaded",
-            "content_selectors": ["article", ".content", ".main", "main"],
-            "timeout": 10000,
-            "screenshot_debug": False
-        }
-    }
-    
     try:
         # 确保output目录存在
         os.makedirs(os.path.dirname(CONFIG_FILE_PATH), exist_ok=True)
@@ -70,15 +39,30 @@ def load_or_create_site_configs():
             with open(CONFIG_FILE_PATH, "r", encoding="utf-8") as f:
                 return json.load(f)
         
-        # 如果配置文件不存在，创建默认配置
-        print(f"[CONFIG] 配置文件不存在，创建默认配置到 {CONFIG_FILE_PATH}")
+        # 如果配置文件不存在，创建最小默认配置
+        print(f"[CONFIG] 配置文件不存在，创建最小默认配置到 {CONFIG_FILE_PATH}")
+        default_configs = {
+            "default": {
+                "wait_for_load": "domcontentloaded",
+                "content_selectors": ["article", ".content", ".main", "main"],
+                "timeout": 10000,
+                "screenshot_debug": False
+            }
+        }
+        
         with open(CONFIG_FILE_PATH, "w", encoding="utf-8") as f:
             json.dump(default_configs, f, ensure_ascii=False, indent=2)
         
         return default_configs
     except Exception as e:
-        print(f"[CONFIG] 加载配置文件出错: {e}，使用默认配置")
-        return default_configs
+        print(f"[CONFIG] 加载配置文件出错: {e}，使用最小默认配置")
+        return {
+            "default": {
+                "wait_for_load": "domcontentloaded",
+                "content_selectors": ["article", ".content", ".main", "main"],
+                "timeout": 10000
+            }
+        }
 
 # 加载网站配置
 SITE_CONFIGS = load_or_create_site_configs()
@@ -157,21 +141,15 @@ async def manual_login():
         login_success = False
         try:
             # --- 登录成功检查逻辑 ---
-            # 检查1: URL是否已跳转到目标KM网站
+            # 检查1: URL是否已跳转到目标网站
             if "km.netease.com" in page.url and "login.netease.com" not in page.url:
-                 print("[LOGIN CHECK] 检测到URL已跳转至 km.netease.com")
-                 login_success = True
-            
-            # 检查2: (可选) 检查页面上是否出现特定元素，例如用户名或退出按钮
-            # 请根据实际情况修改下面的选择器
-            # if not login_success:
-            #    user_element_selector = ".user-name, #logout-button, .avatar" # 示例选择器
-            #    user_element = await page.query_selector(user_element_selector)
-            #    if user_element:
-            #        print(f"[LOGIN CHECK] 检测到用户元素: {user_element_selector}")
-            #        login_success = True
-
-            # 检查3: (备用) 之前的检查逻辑，检查 URL 是否包含 /dweb2/ 或用户头像等
+                print("[LOGIN CHECK] 检测到URL已跳转至 km.netease.com")
+                login_success = True
+            elif "confluence.leihuo.netease.com" in page.url:
+                print("[LOGIN CHECK] 检测到URL已跳转至 confluence.leihuo.netease.com")
+                login_success = True
+                
+            # 检查2: (备用) 之前的检查逻辑，检查 URL 是否包含 /dweb2/ 或用户头像等
             if not login_success:
                  if "login" not in page.url and "/dweb2/" in page.url: # 之前的逻辑
                      print("[LOGIN CHECK] 检测到 URL 不含 'login' 且包含 '/dweb2/' (旧逻辑)")
@@ -252,6 +230,28 @@ async def main():
                 
                 // 确保可以滚动
                 document.body.style.overflow = 'auto';
+                
+                // Confluence特殊处理
+                if (window.location.href.includes('confluence.leihuo.netease.com')) {
+                    // 展开折叠内容
+                    const expanders = document.querySelectorAll('.expand-control');
+                    for (const expander of expanders) {
+                        expander.click();
+                    }
+                    
+                    // 确保内容区域可见
+                    const mainContent = document.querySelector('#main-content');
+                    if (mainContent) {
+                        mainContent.style.display = 'block';
+                        mainContent.style.visibility = 'visible';
+                    }
+                    
+                    // 移除遮挡元素
+                    const hideElements = document.querySelectorAll('.aui-blanket, .aui-dialog2');
+                    for (const el of hideElements) {
+                        el.remove();
+                    }
+                }
             }
             
             // 执行页面增强
@@ -261,7 +261,8 @@ async def main():
         wait_for="body", 
         cache_mode=CacheMode.BYPASS,
         markdown_generator=DefaultMarkdownGenerator(
-            content_filter=PruningContentFilter() 
+            content_filter=PruningContentFilter(),
+            # options={"ignore_links": True}
         )
     )
 
@@ -302,11 +303,18 @@ async def main():
     async def before_goto(page: Page, context: BrowserContext, url: str, **kwargs):
         print(f"[HOOK] 准备访问: {url}")
         
-        # 设置浏览器头信息
-        await page.set_extra_http_headers({
+        # 基本HTTP头
+        headers = {
             "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36"
-        })
+        }
+        
+        # 处理Confluence网站
+        if "confluence.leihuo.netease.com" in url:
+            print("[HOOK] 检测到Confluence网站，准备配置...")
+        
+        # 设置HTTP头
+        await page.set_extra_http_headers(headers)
         
         return page
 
