@@ -21,7 +21,6 @@ os.environ["PLAYWRIGHT_FORCE_VISIBLE"] = "1"  # 额外强制可见
 TARGET_URL = os.getenv("TARGET_URL")
 COOKIE_PATH = os.getenv("COOKIE_PATH")
 LOGIN_URL = os.getenv("LOGIN_URL")
-LOGIN_TIMEOUT = int(os.getenv("LOGIN_TIMEOUT"))  # 登录等待时间（秒）
 DEBUG = False
 
 # 配置文件路径
@@ -57,6 +56,7 @@ print(f"[CONFIG] LOGIN_URL: {len(LOGIN_URL) > 20 and LOGIN_URL[:20]+'...' or LOG
 print(f"[CONFIG] DEBUG: {DEBUG}")
 print(f"[CONFIG] 配置文件: {CONFIG_FILE_PATH}")
 print(f"[CONFIG] 已加载网站配置: {', '.join([domain for domain in SITE_CONFIGS.keys() if domain != 'default'])}")
+
 if DEBUG:
     print("[CONFIG] 网站配置详情:")
     for domain, config in SITE_CONFIGS.items():
@@ -67,16 +67,6 @@ if DEBUG:
             else:
                 print(f"    {key}: {value}")
 
-# 保存网站配置
-def save_site_configs(configs):
-    try:
-        with open(CONFIG_FILE_PATH, "w", encoding="utf-8") as f:
-            json.dump(configs, f, ensure_ascii=False, indent=2)
-        print(f"[CONFIG] 已保存网站配置到 {CONFIG_FILE_PATH}")
-        return True
-    except Exception as e:
-        print(f"[CONFIG] 保存配置文件出错: {e}")
-        return False
 
 async def manual_login():
     """使用直接的playwright方式打开浏览器登录，并暂停等待用户手动操作。"""
@@ -198,8 +188,6 @@ async def manual_login():
             print("[LOGIN] 浏览器已关闭")
             return False
 
-# 通用的登录状态检查函数
-async def check_login_status(page, domain=None):
     """
     根据配置检查页面是否处于登录状态
     Args:
@@ -307,13 +295,9 @@ async def main():
     # 3) 创建爬虫实例
     crawler = AsyncWebCrawler(config=browser_config)
 
-    # 登录状态管理
-    login_status = {
-        "is_logged_in": False,
-        "cookies_loaded": False
-    }
 
     # Hook: 页面和上下文创建后
+    # 用于设置Cookies
     async def on_page_context_created(page: Page, context: BrowserContext, **kwargs):
         print("[HOOK] 设置页面和上下文...")
         
@@ -328,10 +312,6 @@ async def main():
                     if cookies and len(cookies) > 0:
                         await context.add_cookies(cookies)
                         print(f"[HOOK] 成功加载 {len(cookies)} 个cookie")
-                        login_status["cookies_loaded"] = True
-                        # 不再假设cookie一定有效，将在页面加载后检查
-                        login_status["is_logged_in"] = False  # 初始设为False，等页面加载后验证
-                        print("[HOOK] Cookie已加载，登录状态将在页面加载后验证")
                     else:
                         print("[HOOK] Cookie文件存在但为空或无效")
             except Exception as e:
@@ -340,6 +320,7 @@ async def main():
         return page
 
     # Hook: 页面导航前
+    # 用于设置Custom HTTP Headers   
     async def before_goto(page: Page, context: BrowserContext, url: str, **kwargs):
         print(f"[HOOK] 准备访问: {url}")
         
@@ -355,6 +336,7 @@ async def main():
         return page
 
     # Hook: 页面导航后
+    # 用于等待页面加载，执行滚动行为，如果Debug可以截图
     async def after_goto(page: Page, context: BrowserContext, url: str, response, **kwargs):
         print(f"[HOOK] 已加载页面: {url}")
         
@@ -364,7 +346,7 @@ async def main():
         if match:
             domain = match.group(1)
         
-        # 根据URL确定使用哪个网站配置
+        # 根据URL确定使用哪个网站配置，如果没有匹配的配置，使用默认配置
         site_config = None
         matched_domain = None
         for config_domain, config in SITE_CONFIGS.items():
@@ -373,8 +355,7 @@ async def main():
                 matched_domain = config_domain
                 print(f"[HOOK] 使用 {config_domain} 的配置")
                 break
-        
-        # 如果没有匹配的配置，使用默认配置
+
         if site_config is None:
             site_config = SITE_CONFIGS["default"]
             print(f"[HOOK] 未找到匹配的域名配置，使用默认配置")
@@ -382,36 +363,13 @@ async def main():
             if domain:
                 print(f"[HOOK] 当前域名: {domain} (未配置)")
         
+        # 根据配置等待页面加载
         try:
             # 等待页面加载
             wait_for_load = site_config.get("wait_for_load", "domcontentloaded")
             timeout = site_config.get("timeout", 10000)
             print(f"[HOOK] 等待页面加载 ({wait_for_load})，超时: {timeout}ms")
             await page.wait_for_load_state(wait_for_load, timeout=timeout)
-            
-            # 检查内容是否可见
-            content_selectors = site_config.get("content_selectors", [])
-            if content_selectors:
-                selector_str = ", ".join(content_selectors)
-                content_visible = await page.is_visible(selector_str, timeout=3000)
-                print(f"[HOOK] 内容可见性检查: {content_visible}")
-                
-                # 如果配置了需要刷新检查且内容不可见，尝试刷新
-                if not content_visible and site_config.get("needs_refresh_check", False) and login_status["cookies_loaded"]:
-                    print("[HOOK] 内容不可见，尝试刷新页面...")
-                    await page.reload()
-                    await page.wait_for_load_state(wait_for_load, timeout=timeout)
-                    
-                    # 再次检查内容可见性
-                    content_visible = await page.is_visible(selector_str, timeout=3000)
-                    if not content_visible:
-                        print("[HOOK] 刷新后仍无法看到内容，检查登录状态...")
-                        # 使用通用登录检查函数
-                        login_status["is_logged_in"] = await check_login_status(page, matched_domain)
-                        if not login_status["is_logged_in"]:
-                            print("[HOOK] 登录检查失败，Cookie可能已失效")
-                        else:
-                            print("[HOOK] 登录状态正常，但内容仍然不可见")
             
             # 额外等待时间
             extra_wait = site_config.get("extra_wait", 0)
@@ -435,7 +393,7 @@ async def main():
                 await asyncio.sleep(2)  # 滚动后等待
             
             # 调试模式下截图
-            if DEBUG and site_config.get("screenshot_debug", False):
+            if DEBUG:
                 filename = url.split("//")[-1].replace("/", "_")[:30]
                 screenshot_path = f"debug_{filename}.png"
                 print(f"[HOOK] 保存页面截图到 {screenshot_path}")
@@ -462,13 +420,12 @@ async def main():
         print("\n爬取成功！")
         print("URL:", result.url)
         print("HTML长度:", len(result.html))
-        print(f"登录状态: {'已登录' if login_status['is_logged_in'] else '未登录'}")
         
         # 从metadata获取标题
         page_title = "未知标题"
         if hasattr(result, 'metadata') and result.metadata and result.metadata.get("title"):
             page_title = result.metadata.get("title")
-            print(f"页面标题: {page_title}")
+            # print(f"页面标题: {page_title}")
         
         # 处理页面标题，替换非法字符，用于创建文件夹
         safe_title = "".join([c if c.isalnum() or c in [' ', '_', '-'] else '_' for c in page_title])
@@ -483,19 +440,19 @@ async def main():
         # 根据页面标题创建目录
         title_dir = os.path.join("output", safe_title)
         os.makedirs(title_dir, exist_ok=True)
-        print(f"[OUTPUT] 创建目录: {title_dir}")
+        # print(f"[OUTPUT] 创建目录: {title_dir}")
         
         # 保存HTML结果
         html_path = os.path.join(title_dir, "crawled_content.html")
         with open(html_path, "w", encoding="utf-8") as f:
             f.write(result.html)
-            print(f"已保存HTML内容到 {html_path}")        
+            print(f"[OUTPUT] 已保存HTML内容到 {html_path}")        
         
         # 保存Markdown结果
         md_path = os.path.join(title_dir, "crawled_content.md")
         with open(md_path, "w", encoding="utf-8") as f:
             f.write(result.markdown.fit_markdown)
-            print(f"已保存Markdown内容到 {md_path}")
+            print(f"[OUTPUT] 已保存Markdown内容到 {md_path}")
     else:
         print("爬取失败:", result.error_message)
 
